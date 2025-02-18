@@ -1,13 +1,33 @@
 // com.intellij.openapi.diagnostic.Logger.getInstance("ActiveEditorLogger").info("Current file: $filePath")
 package com.wrmsr.viewrelay
 
-import com.intellij.openapi.editor.EditorFactory
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+
+fun getVisibleLineRange(editor: Editor): IntRange? {
+    val document = editor.document
+    val scrollingModel = editor.scrollingModel
+    val visibleArea = scrollingModel.visibleArea // Gets the visible portion of the editor
+
+    // Convert visible start and end offsets to logical positions
+    val startLine = editor.yToVisualLine(visibleArea.y)
+    val endLine = editor.yToVisualLine(visibleArea.y + visibleArea.height)
+
+    // Convert from visual line to logical line numbers
+    val startLogicalLine =
+        editor.visualToLogicalPosition(editor.offsetToVisualPosition(document.getLineStartOffset(startLine))).line
+    val endLogicalLine =
+        editor.visualToLogicalPosition(editor.offsetToVisualPosition(document.getLineEndOffset(endLine))).line
+
+    return startLogicalLine..endLogicalLine
+}
 
 class ActiveEditorLogger : ProjectActivity {
     private val scheduler = Executors.newSingleThreadScheduledExecutor()
@@ -23,6 +43,8 @@ class ActiveEditorLogger : ProjectActivity {
             if (isRunning.compareAndSet(false, true)) { // Check if another execution is running
                 try {
                     logActiveFilePath()
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 } finally {
                     isRunning.set(false) // Release the lock after execution
                 }
@@ -35,22 +57,26 @@ class ActiveEditorLogger : ProjectActivity {
         val filePath = editor?.virtualFile?.path
 
         filePath?.let {
-            val msg = "Active file: $filePath"
+            ApplicationManager.getApplication().invokeLater {
+                val lineRange = getVisibleLineRange(editor)
 
-            println(msg)
+                val msg = "Active file: $filePath $lineRange"
 
-            logger.info(msg)
+                println(msg)
 
-            Logger.getInstance("ActiveEditorLogger").info(msg)
+                logger.info(msg)
 
-            // // Also show it in the Event Log
-            // val notification = Notification(
-            //     "Active Editor Logger",
-            //     "Active File Changed",
-            //     msg,
-            //     NotificationType.INFORMATION
-            // )
-            // Notifications.Bus.notify(notification)
+                Logger.getInstance("ActiveEditorLogger").info(msg)
+
+                // // Also show it in the Event Log
+                // val notification = Notification(
+                //     "Active Editor Logger",
+                //     "Active File Changed",
+                //     msg,
+                //     NotificationType.INFORMATION
+                // )
+                // Notifications.Bus.notify(notification)
+            }
         }
     }
 }
