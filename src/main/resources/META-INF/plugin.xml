@@ -22,7 +22,7 @@
     <!-- Extension points defined by the plugin.
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
     <extensions defaultExtensionNs="com.intellij">
-        <postStartupActivity implementation="com.wrmsr.viewrelay.ActiveEditorLogger" />
+        <postStartupActivity implementation="com.wrmsr.viewrelay.ActiveEditorVisibilityTracker"/>
     </extensions>
 
     <applicationListeners>
