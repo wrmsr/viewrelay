@@ -129,12 +129,43 @@ class ViewRelayService : Disposable {
         }
         hasSetup = true
 
+        startBackgroundThread()
+
         installEditorListeners()
     }
 
     @Synchronized
     fun shutdown() {
+        stopBackgroundThread()
+    }
 
+    //
+
+    private var backgroundThread: Thread? = null
+
+    private fun startBackgroundThread() {
+        backgroundThread = Thread { backgroundThreadMain() }
+        backgroundThread?.start()
+    }
+    
+    private fun stopBackgroundThread() {
+        val thread = backgroundThread ?: return
+        thread.interrupt()
+        thread.join()
+        backgroundThread = null
+    }
+
+    private fun backgroundThreadMain() {
+        try {
+            while (!Thread.currentThread().isInterrupted) {
+                backgroundThreadTick()
+                Thread.sleep(1000)
+            }
+        } catch (e: InterruptedException) {}
+    }
+    
+    private fun backgroundThreadTick() {
+        println("Current time: ${java.time.LocalDateTime.now()}")
     }
 
     //
