@@ -2,11 +2,11 @@ package com.wrmsr.viewrelay
 
 import kotlin.concurrent.thread
 
-class ViewRelayThread {
+class ViewRelayThinker {
     private var backgroundThread: Thread? = null
 
     fun start() {
-        backgroundThread = thread { threadMain() }
+        backgroundThread = thread(start = false) { threadMain() }
         backgroundThread?.start()
     }
 

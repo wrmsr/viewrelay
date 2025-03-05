@@ -37,7 +37,7 @@ class ViewRelayService : Disposable {
 
     private var hasSetup = false
 
-    private val thread = ViewRelayThread()
+    private val thinker = ViewRelayThinker()
     private val listeners = ViewRelayListeners({ updateState(it) }, this)
     private val server = ViewRelayServer(8081)
 
@@ -48,7 +48,7 @@ class ViewRelayService : Disposable {
         }
         hasSetup = true
 
-        thread.start()
+        thinker.start()
 
         listeners.install()
 
@@ -57,7 +57,7 @@ class ViewRelayService : Disposable {
 
     @Synchronized
     fun shutdown() {
-        thread.stop()
+        thinker.stop()
     }
 
     //

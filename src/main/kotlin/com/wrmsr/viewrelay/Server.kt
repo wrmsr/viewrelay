@@ -70,48 +70,7 @@ class ViewRelayServer(vararg binds: Any) {
 
     //
 
-    abstract inner class Handler {
-        @Volatile private var _stopped = false
-
-        val stopped: Boolean
-            get() = _stopped
-
-        @Volatile private var thread: Thread? = null
-
-        @Synchronized
-        fun start() {
-            if (_stopped) {
-                throw RuntimeException("Stopped")
-            }
-
-            if (thread != null) {
-                return
-            }
-
-            thread = thread { threadMain() }
-            thread?.start()
-        }
-
-        @Synchronized
-        fun stop() {
-            _stopped = true
-
-            close()
-
-            thread?.interrupt()
-            thread?.join()
-
-            close()
-        }
-
-        protected abstract fun threadMain()
-
-        open fun close() {}
-    }
-
-    //
-
-    abstract inner class SocketHandler<S : Closeable> : Handler() {
+    abstract inner class SocketHandler<S : Closeable> : Worker() {
         @Volatile private var _socket: S? = null
 
         val socket: S?
