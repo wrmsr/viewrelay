@@ -10,13 +10,36 @@ import com.intellij.openapi.editor.event.VisibleAreaEvent
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.editor.event.SelectionEvent
+import com.intellij.openapi.editor.event.SelectionListener
 import com.intellij.openapi.startup.ProjectActivity
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.min
 
 class ActiveEditorVisibilityTracker : ProjectActivity {
+    data class FilePosition(
+        val line: Int,
+        val column: Int,
+        val offset: Int,
+    )
+
+    data class FileRange(
+        val start: FilePosition,
+        val end: FilePosition,
+    )
+
+    data class FileVisibilityState(
+        val filePath: String,
+        val visibleLines: IntRange,
+        val caret: FilePosition,
+        val selection: FileRange,
+    )
+
+    //
+
     private val logger = Logger.getInstance("ActiveEditorLogger")
-    private val lastState = AtomicReference<Pair<String, IntRange>?>(null)
+
+    private val lastState = AtomicReference<FileVisibilityState?>(null)
 
     override suspend fun execute(project: Project) {
         ApplicationManager.getApplication().invokeLater {
@@ -30,19 +53,59 @@ class ActiveEditorVisibilityTracker : ProjectActivity {
                     }
                 }
             }, project)
+
+            EditorFactory.getInstance().eventMulticaster.addSelectionListener(object : SelectionListener {
+                override fun selectionChanged(event: SelectionEvent) {
+                    try {
+                        val editor = event.editor
+                        logVisibleFileAndLines(editor)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }, project)
         }
     }
+
+    //
 
     private fun logVisibleFileAndLines(editor: Editor) {
         val filePath = editor.virtualFile?.path ?: return
         val visibleLines = getVisibleLineRange(editor) ?: return
 
-        val newState = filePath to visibleLines
+        val currentCaret = editor.caretModel.currentCaret
+
+        val caret = FilePosition(
+            currentCaret.logicalPosition.line,
+            currentCaret.logicalPosition.column,
+            currentCaret.offset,
+        )
+        
+        fun filePositionFromOffset(offset: Int): FilePosition {
+            return FilePosition(
+                editor.offsetToLogicalPosition(offset).line,
+                editor.offsetToLogicalPosition(offset).column,
+                offset
+            )
+        }
+
+        val caretSelectionRange = currentCaret.selectionRange
+        val selection = FileRange(
+            filePositionFromOffset(caretSelectionRange.startOffset),
+            filePositionFromOffset(caretSelectionRange.endOffset),
+        )
+
+        val newState = FileVisibilityState(
+            filePath,
+            visibleLines,
+            caret,
+            selection,
+        )
+
         val prevState = lastState.getAndSet(newState)
 
-        // Print only if the file or visible lines changed
         if (newState != prevState) {
-            println("Visible file: $filePath, Lines: $visibleLines")
+            println("$newState")
         }
     }
 
