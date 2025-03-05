@@ -9,15 +9,15 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.thread
 
 class ChatServer(vararg listeners: Any) {
-    private val serverSockets = mutableListOf<ServerSocketHandler>()
-    val clients = ConcurrentHashMap.newKeySet<ClientHandler>()
+    private val serverSockets = mutableListOf<SocketHandler>()
+    private val clients = ConcurrentHashMap.newKeySet<ClientHandler>()
     @Volatile private var running = true
 
     init {
         listeners.forEach { listener ->
             when (listener) {
-                is Int -> serverSockets.add(TcpServerSocketHandler(listener, this))
-                is String -> serverSockets.add(UnixServerSocketHandler(listener, this))
+                is Int -> serverSockets.add(TcpSocketHandler(listener))
+                is String -> serverSockets.add(UnixSocketHandler(listener))
                 else -> throw IllegalArgumentException("Unsupported listener type: $listener")
             }
         }
@@ -47,129 +47,142 @@ class ChatServer(vararg listeners: Any) {
         }
         println("Chat server stopped.")
     }
-}
 
-abstract class ServerSocketHandler(protected val server: ChatServer) {
-    abstract fun run()
-    abstract fun close()
-}
+    //
 
-class TcpServerSocketHandler(private val port: Int, server: ChatServer) : ServerSocketHandler(server) {
-    private var serverSocket: ServerSocket? = null
+    abstract inner class SocketHandler {
+        abstract fun run()
+        abstract fun close()
+    }
 
-    override fun run() {
-        try {
-            serverSocket = ServerSocket(port)
-            println("Listening on TCP port $port")
+    inner class TcpSocketHandler(private val port: Int) : SocketHandler() {
+        private var serverSocket: ServerSocket? = null
 
-            while (!serverSocket!!.isClosed) {
-                try {
-                    val clientSocket = serverSocket?.accept() ?: break
-                    val clientHandler = ClientHandler(clientSocket, server)
-                    server.clients.add(clientHandler)
-                    thread { clientHandler.run() }
-                } catch (e: SocketException) {
-                    if (!serverSocket!!.isClosed) println("TCP error: ${e.message}")
-                    break
+        override fun run() {
+            try {
+                serverSocket = ServerSocket(port)
+                println("Listening on TCP port $port")
+
+                while (!serverSocket!!.isClosed) {
+                    try {
+                        val clientSocket = serverSocket?.accept() ?: break
+                        val clientHandler = ClientHandler(clientSocket)
+                        clients.add(clientHandler)
+                        thread { clientHandler.run() }
+                    } catch (e: SocketException) {
+                        if (!serverSocket!!.isClosed) println("TCP error: ${e.message}")
+                        break
+                    }
                 }
+            } catch (e: IOException) {
+                println("Failed to start TCP server on port $port: ${e.message}")
+            } finally {
+                close()
             }
-        } catch (e: IOException) {
-            println("Failed to start TCP server on port $port: ${e.message}")
-        } finally {
-            close()
+        }
+
+        override fun close() {
+            try {
+                serverSocket?.close()
+            } catch (e: IOException) {
+                println("Error closing TCP server socket: ${e.message}")
+            }
         }
     }
 
-    override fun close() {
-        try {
-            serverSocket?.close()
-        } catch (e: IOException) {
-            println("Error closing TCP server socket: ${e.message}")
-        }
-    }
-}
+    inner class UnixSocketHandler(private val path: String) : SocketHandler() {
+        private var serverSocket: ServerSocketChannel? = null
 
-class UnixServerSocketHandler(private val path: String, server: ChatServer) : ServerSocketHandler(server) {
-    private var serverSocket: ServerSocketChannel? = null
+        override fun run() {
+            try {
+                val socketFile = File(path)
+                socketFile.delete() // Remove stale socket file
+                val address = UnixDomainSocketAddress.of(Path.of(path))
 
-    override fun run() {
-        try {
-            val socketFile = File(path)
-            socketFile.delete() // Remove stale socket file
-            val address = UnixDomainSocketAddress.of(Path.of(path))
-
-            serverSocket = ServerSocketChannel.open(StandardProtocolFamily.UNIX).apply {
-                bind(address)
-            }
-            println("Listening on Unix socket $path")
-
-            while (serverSocket?.isOpen == true) {
-                try {
-                    val clientSocket = serverSocket?.accept()?.socket() ?: break
-                    val clientHandler = ClientHandler(clientSocket, server)
-                    server.clients.add(clientHandler)
-                    thread { clientHandler.run() }
-                } catch (e: SocketException) {
-                    if (serverSocket?.isOpen == true) println("Unix socket error: ${e.message}")
-                    break
+                serverSocket = ServerSocketChannel.open(StandardProtocolFamily.UNIX).apply {
+                    bind(address)
                 }
+                println("Listening on Unix socket $path")
+
+                while (serverSocket?.isOpen == true) {
+                    try {
+                        val clientSocket = serverSocket?.accept()?.socket() ?: break
+                        val clientHandler = ClientHandler(clientSocket)
+                        clients.add(clientHandler)
+                        thread { clientHandler.run() }
+                    } catch (e: SocketException) {
+                        if (serverSocket?.isOpen == true) println("Unix socket error: ${e.message}")
+                        break
+                    }
+                }
+            } catch (e: IOException) {
+                println("Failed to start Unix socket at $path: ${e.message}")
+            } finally {
+                close()
             }
-        } catch (e: IOException) {
-            println("Failed to start Unix socket at $path: ${e.message}")
-        } finally {
-            close()
         }
-    }
 
-    override fun close() {
-        try {
-            serverSocket?.close()
-            File(path).delete()
-        } catch (e: IOException) {
-            println("Error closing Unix socket: ${e.message}")
-        }
-    }
-}
-
-class ClientHandler(private val socket: Socket, private val server: ChatServer) {
-    private val reader = socket.getInputStream().bufferedReader()
-    private val writer = socket.getOutputStream().bufferedWriter()
-    private var running = true
-
-    fun run() {
-        try {
-            println("Client connected: ${socket.remoteSocketAddress}")
-            reader.forEachLine { line ->
-                if (!running) return@forEachLine
-                server.broadcast(line, this)
+        override fun close() {
+            try {
+                serverSocket?.close()
+                File(path).delete()
+            } catch (e: IOException) {
+                println("Error closing Unix socket: ${e.message}")
             }
-        } catch (e: IOException) {
-            if (running) println("Client communication error: ${e.message}")
-        } finally {
-            close()
         }
     }
 
-    fun sendMessage(message: String) {
-        try {
-            writer.write("$message\n")
-            writer.flush()
-        } catch (e: IOException) {
-            println("Failed to send message to client: ${e.message}")
-            close()
-        }
-    }
+    //
 
-    fun close() {
-        if (!running) return
-        running = false
-        server.removeClient(this)
-        try {
-            socket.close()
-        } catch (e: IOException) {
-            println("Error closing client socket: ${e.message}")
+    inner class ClientHandler(private val socket: Socket) {
+        private val reader = socket.getInputStream().bufferedReader()
+        private val writer = socket.getOutputStream().bufferedWriter()
+        private var running = true
+
+        fun run() {
+            try {
+                println("Client connected: ${socket.remoteSocketAddress}")
+                reader.forEachLine { line ->
+                    if (!running) {
+                        return@forEachLine
+                    }
+                    broadcast(line, this)
+                }
+            } catch (e: IOException) {
+                if (running) {
+                    println("Client communication error: ${e.message}")
+                }
+            } finally {
+                close()
+            }
         }
-        println("Client disconnected: ${socket.remoteSocketAddress}")
+
+        fun sendMessage(message: String) {
+            try {
+                writer.write("$message\n")
+                writer.flush()
+            } catch (e: IOException) {
+                println("Failed to send message to client: ${e.message}")
+                close()
+            }
+        }
+
+        fun close() {
+            if (!running) {
+                return
+            }
+
+            running = false
+            removeClient(this)
+
+            try {
+                socket.close()
+            } catch (e: IOException) {
+                println("Error closing client socket: ${e.message}")
+            }
+
+            println("Client disconnected: ${socket.remoteSocketAddress}")
+        }
     }
 }
 
