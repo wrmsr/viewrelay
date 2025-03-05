@@ -11,6 +11,7 @@ import com.intellij.openapi.editor.event.VisibleAreaEvent
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.editor.LogicalPosition
 import com.intellij.openapi.editor.event.CaretEvent
 import com.intellij.openapi.editor.event.CaretListener
 import com.intellij.openapi.editor.event.SelectionEvent
@@ -18,22 +19,27 @@ import com.intellij.openapi.editor.event.SelectionListener
 import com.intellij.openapi.startup.ProjectActivity
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.min
+import kotlinx.serialization.*
+import kotlinx.serialization.json.*
 
 class ActiveEditorVisibilityTracker : ProjectActivity {
+    @Serializable
     data class FilePosition(
         val line: Int,
         val column: Int,
         val offset: Int,
     )
 
+    @Serializable
     data class FileRange(
         val start: FilePosition,
         val end: FilePosition,
     )
 
+    @Serializable
     data class FileVisibilityState(
         val filePath: String,
-        val visibleLines: IntRange,
+        val visible: FileRange,
         val caret: FilePosition,
         val selection: FileRange,
     )
@@ -79,6 +85,25 @@ class ActiveEditorVisibilityTracker : ProjectActivity {
 
     //
 
+    private fun filePositionFromOffset(editor: Editor, offset: Int): FilePosition {
+        val lp = editor.offsetToLogicalPosition(offset)
+        return FilePosition(
+            lp.line,
+            lp.column,
+            offset
+        )
+    }
+
+    private fun filePositionFromLogicalPosition(editor: Editor, lp: LogicalPosition): FilePosition {
+        return FilePosition(
+            lp.line,
+            lp.column,
+            editor.logicalPositionToOffset(lp),
+        )
+    }
+
+    //
+
     private fun tryLogVisibleFileAndLines(editor: Editor) {
         try {
             logVisibleFileAndLines(editor)
@@ -89,7 +114,7 @@ class ActiveEditorVisibilityTracker : ProjectActivity {
 
     private fun logVisibleFileAndLines(editor: Editor) {
         val filePath = editor.virtualFile?.path ?: return
-        val visibleLines = getVisibleLineRange(editor) ?: return
+        val visible = getVisibleLineRange(editor)
 
         val currentCaret = editor.caretModel.currentCaret
 
@@ -98,24 +123,16 @@ class ActiveEditorVisibilityTracker : ProjectActivity {
             currentCaret.logicalPosition.column,
             currentCaret.offset,
         )
-        
-        fun filePositionFromOffset(offset: Int): FilePosition {
-            return FilePosition(
-                editor.offsetToLogicalPosition(offset).line,
-                editor.offsetToLogicalPosition(offset).column,
-                offset
-            )
-        }
 
         val caretSelectionRange = currentCaret.selectionRange
         val selection = FileRange(
-            filePositionFromOffset(caretSelectionRange.startOffset),
-            filePositionFromOffset(caretSelectionRange.endOffset),
+            filePositionFromOffset(editor, caretSelectionRange.startOffset),
+            filePositionFromOffset(editor, caretSelectionRange.endOffset),
         )
 
         val newState = FileVisibilityState(
             filePath,
-            visibleLines,
+            visible,
             caret,
             selection,
         )
@@ -123,11 +140,13 @@ class ActiveEditorVisibilityTracker : ProjectActivity {
         val prevState = lastState.getAndSet(newState)
 
         if (newState != prevState) {
-            println("$newState")
+            val json = Json { prettyPrint = true }
+            val js = json.encodeToString(newState)
+            println(js)
         }
     }
 
-    private fun getVisibleLineRange(editor: Editor): IntRange? {
+    private fun getVisibleLineRange(editor: Editor): FileRange {
         val document = editor.document
         val scrollingModel = editor.scrollingModel
         val visibleArea = scrollingModel.visibleArea
@@ -135,9 +154,14 @@ class ActiveEditorVisibilityTracker : ProjectActivity {
         val startLine = editor.yToVisualLine(visibleArea.y)
         val endLine = min(editor.yToVisualLine(visibleArea.y + visibleArea.height), document.lineCount - 1)
 
-        val startLogicalLine = editor.visualToLogicalPosition(editor.offsetToVisualPosition(document.getLineStartOffset(startLine))).line
-        val endLogicalLine = editor.visualToLogicalPosition(editor.offsetToVisualPosition(document.getLineEndOffset(endLine))).line
+        val startLogicalPosition =
+            editor.visualToLogicalPosition(editor.offsetToVisualPosition(document.getLineStartOffset(startLine)))
+        val endLogicalPosition =
+            editor.visualToLogicalPosition(editor.offsetToVisualPosition(document.getLineEndOffset(endLine)))
 
-        return startLogicalLine..endLogicalLine
+        return FileRange(
+            filePositionFromLogicalPosition(editor, startLogicalPosition),
+            filePositionFromLogicalPosition(editor, endLogicalPosition),
+        )
     }
 }
