@@ -8,8 +8,6 @@ TODO:
 
 https://plugins.jetbrains.com/plugin/17669-flora-beta-
 https://github.com/dkandalov/live-plugin
-
-com.intellij.openapi.diagnostic.Logger.getInstance("ActiveEditorLogger").info("Current file: $filePath")
 */
 package com.wrmsr.viewrelay
 
