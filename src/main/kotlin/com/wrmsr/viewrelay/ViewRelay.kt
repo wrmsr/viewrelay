@@ -114,7 +114,11 @@ data class FileVisibilityState(
 
 @Service
 class ViewRelayService : Disposable {
-    override fun dispose() {}
+    override fun dispose() {
+        shutdown()
+    }
+
+    //
 
     private var hasSetup = false
 
@@ -126,6 +130,11 @@ class ViewRelayService : Disposable {
         hasSetup = true
 
         installEditorListeners()
+    }
+
+    @Synchronized
+    fun shutdown() {
+
     }
 
     //
