@@ -2,7 +2,9 @@ package com.wrmsr.viewrelay
 
 import kotlin.concurrent.thread
 
-abstract class Worker {
+abstract class Worker(
+    protected val logger: Logger? = null,
+) {
     @Volatile
     private var _stopped = false
 

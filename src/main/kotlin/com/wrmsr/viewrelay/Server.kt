@@ -11,9 +11,12 @@ import java.net.*
 import java.nio.channels.ServerSocketChannel
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.concurrent.thread
 
-class ViewRelayServer(vararg binds: Any) {
+class ViewRelayServer(
+    vararg binds: Any,
+
+    private val logger: Logger? = null,
+) {
     private val servers = mutableListOf<ServerHandler<*>>()
 
     init {
@@ -70,7 +73,7 @@ class ViewRelayServer(vararg binds: Any) {
 
     //
 
-    abstract inner class SocketHandler<S : Closeable> : Worker() {
+    abstract inner class SocketHandler<S : Closeable> : Worker(logger) {
         @Volatile private var _socket: S? = null
 
         val socket: S?
@@ -122,7 +125,7 @@ class ViewRelayServer(vararg binds: Any) {
 
                     } catch (e: SocketException) {
                         if (socketClosed() == false) {
-                            println("Server handler error: ${e.message}")
+                            logger?.exception(e, "Server handler error")
                         }
 
                         break
@@ -130,7 +133,7 @@ class ViewRelayServer(vararg binds: Any) {
                 }
 
             } catch (e: IOException) {
-                println("Failed to start server: ${e.message}")
+                logger?.exception(e, "Failed to start server")
 
             } finally {
                 close()
@@ -177,7 +180,7 @@ class ViewRelayServer(vararg binds: Any) {
             try {
                 File(path).delete()
             } catch (e: IOException) {
-                println("Error closing unix socket: ${e.message}")
+                logger?.exception(e, "Error closing unix socket")
             }
         }
     }
@@ -194,7 +197,7 @@ class ViewRelayServer(vararg binds: Any) {
 
         override fun threadMain() {
             try {
-                println("Client connected: ${socket?.remoteSocketAddress}")
+                logger?.info("Client connected: ${socket?.remoteSocketAddress}")
 
                 reader.forEachLine { line ->
                     if (stopped) {
@@ -205,7 +208,7 @@ class ViewRelayServer(vararg binds: Any) {
 
             } catch (e: IOException) {
                 if (!stopped) {
-                    println("Client communication error: ${e.message}")
+                    logger?.exception(e, "Client communication error")
                 }
 
             } finally {
@@ -219,7 +222,7 @@ class ViewRelayServer(vararg binds: Any) {
                 writer.flush()
 
             } catch (e: IOException) {
-                println("Failed to send message to client: ${e.message}")
+                logger?.exception(e, "Failed to send message to client")
                 close()
             }
         }
@@ -232,10 +235,10 @@ class ViewRelayServer(vararg binds: Any) {
             try {
                 socket?.close()
             } catch (e: IOException) {
-                println("Error closing client socket: ${e.message}")
+                logger?.exception(e, "Error closing client socket")
             }
 
-            println("Client disconnected: ${socket?.remoteSocketAddress}")
+            logger?.info("Client disconnected: ${socket?.remoteSocketAddress}")
         }
     }
 }

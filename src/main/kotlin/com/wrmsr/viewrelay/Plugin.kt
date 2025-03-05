@@ -3,7 +3,6 @@ TODO:
  - multiple carets
  - honor columns in visible
  - server
- - logging
 
 ==
 
@@ -35,11 +34,13 @@ class ViewRelayService : Disposable {
 
     //
 
-    private var hasSetup = false
+    private val logger = PrintlnLogger()
 
-    private val thinker = ViewRelayThinker()
+    @Volatile private var hasSetup = false
+
+    private val thinker = ViewRelayThinker(logger = logger)
     private val listeners = ViewRelayListeners({ updateState(it) }, this)
-    private val server = ViewRelayServer(8081)
+    private val server = ViewRelayServer(8081, logger = logger)
 
     @Synchronized
     fun setup() {

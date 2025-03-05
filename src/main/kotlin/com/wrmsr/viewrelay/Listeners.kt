@@ -13,6 +13,8 @@ import com.intellij.openapi.editor.event.VisibleAreaListener
 class ViewRelayListeners(
     val update: (Editor) -> Unit,
     val disposable: Disposable,
+
+    private val logger: Logger? = null,
 ) {
     fun install() {
         val em = EditorFactory.getInstance().eventMulticaster
@@ -48,7 +50,7 @@ class ViewRelayListeners(
         try {
             update(editor)
         } catch (e: Exception) {
-            e.printStackTrace()
+            logger?.exception(e)
         }
     }
 }

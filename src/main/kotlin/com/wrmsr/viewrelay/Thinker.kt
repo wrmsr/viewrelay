@@ -2,7 +2,9 @@ package com.wrmsr.viewrelay
 
 import kotlin.concurrent.thread
 
-class ViewRelayThinker {
+class ViewRelayThinker(
+    private val logger: Logger? = null,
+) {
     private var backgroundThread: Thread? = null
 
     fun start() {
@@ -27,6 +29,6 @@ class ViewRelayThinker {
     }
 
     private fun tick() {
-        println("Current time: ${java.time.LocalDateTime.now()}")
+        logger?.info("Current time: ${java.time.LocalDateTime.now()}")
     }
 }
