@@ -66,10 +66,14 @@ class ViewRelayService : Disposable {
         val prevState = lastState.getAndSet(newState)
 
         if (newState != prevState) {
-            val json = Json { prettyPrint = true }
-            val js = json.encodeToString(newState)
-            println(js)
+            reportState(newState)
         }
+    }
+
+    private fun reportState(state: ViewRelayState) {
+        val json = Json { prettyPrint = true }
+        val js = json.encodeToString(state)
+        println(js)
     }
 }
 
