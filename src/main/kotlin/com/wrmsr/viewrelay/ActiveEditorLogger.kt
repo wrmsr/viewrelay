@@ -4,6 +4,7 @@
 package com.wrmsr.viewrelay
 
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.components.Service
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.event.VisibleAreaListener
@@ -11,124 +12,145 @@ import com.intellij.openapi.editor.event.VisibleAreaEvent
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.service
+import com.intellij.openapi.editor.Caret
 import com.intellij.openapi.editor.LogicalPosition
 import com.intellij.openapi.editor.event.CaretEvent
 import com.intellij.openapi.editor.event.CaretListener
 import com.intellij.openapi.editor.event.SelectionEvent
 import com.intellij.openapi.editor.event.SelectionListener
 import com.intellij.openapi.startup.ProjectActivity
+import com.intellij.openapi.util.TextRange
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.min
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
+import java.awt.Rectangle
 
-class ActiveEditorVisibilityTracker : ProjectActivity {
-    @Serializable
-    data class FilePosition(
-        val line: Int,
-        val column: Int,
-        val offset: Int,
-    )
+//
 
-    @Serializable
-    data class FileRange(
-        val start: FilePosition,
-        val end: FilePosition,
-    )
+@Serializable
+data class FilePosition(
+    val line: Int,
+    val column: Int,
+    val offset: Int,
+) {
+    companion object {
+        fun fromOffset(editor: Editor, offset: Int): FilePosition {
+            val lp = editor.offsetToLogicalPosition(offset)
+            return FilePosition(
+                lp.line,
+                lp.column,
+                offset
+            )
+        }
 
-    @Serializable
-    data class FileVisibilityState(
-        val filePath: String,
-        val visible: FileRange,
-        val caret: FilePosition,
-        val selection: FileRange,
-    )
+        fun fromLogicalPosition(editor: Editor, lp: LogicalPosition): FilePosition {
+            return FilePosition(
+                lp.line,
+                lp.column,
+                editor.logicalPositionToOffset(lp),
+            )
+        }
 
-    //
-
-    private val logger = Logger.getInstance("ActiveEditorLogger")
-
-    private val lastState = AtomicReference<FileVisibilityState?>(null)
-
-    override suspend fun execute(project: Project) {
-        ApplicationManager.getApplication().invokeLater {
-            val em = EditorFactory.getInstance().eventMulticaster
-            val pd: Disposable = project
-
-            em.addVisibleAreaListener(object : VisibleAreaListener {
-                override fun visibleAreaChanged(event: VisibleAreaEvent) {
-                    tryLogVisibleFileAndLines(event.editor)
-                }
-            }, pd)
-
-            em.addCaretListener(object : CaretListener {
-                override fun caretPositionChanged(event: CaretEvent) {
-                    tryLogVisibleFileAndLines(event.editor)
-                }
-
-                override fun caretAdded(event: CaretEvent) {
-                    tryLogVisibleFileAndLines(event.editor)
-                }
-
-                override fun caretRemoved(event: CaretEvent) {
-                    tryLogVisibleFileAndLines(event.editor)
-                }
-            }, pd)
-
-            em.addSelectionListener(object : SelectionListener {
-                override fun selectionChanged(event: SelectionEvent) {
-                    tryLogVisibleFileAndLines(event.editor)
-                }
-            }, pd)
+        fun fromCaret(caret: Caret): FilePosition {
+            return FilePosition(
+                caret.logicalPosition.line,
+                caret.logicalPosition.column,
+                caret.offset,
+            )
         }
     }
+}
 
-    //
+@Serializable
+data class FileRange(
+    val start: FilePosition,
+    val end: FilePosition,
+) {
+    companion object {
+        fun fromTextRange(editor: Editor, textRange: TextRange): FileRange {
+            return FileRange(
+                FilePosition.fromOffset(editor, textRange.startOffset),
+                FilePosition.fromOffset(editor, textRange.endOffset),
+            )
+        }
 
-    private fun filePositionFromOffset(editor: Editor, offset: Int): FilePosition {
-        val lp = editor.offsetToLogicalPosition(offset)
-        return FilePosition(
-            lp.line,
-            lp.column,
-            offset
-        )
+        fun fromRectangle(editor: Editor, rectangle: Rectangle): FileRange {
+            val document = editor.document
+
+            // FIXME: honor columns
+            val startLine = editor.yToVisualLine(rectangle.y)
+            val endLine = min(editor.yToVisualLine(rectangle.y + rectangle.height), document.lineCount - 1)
+
+            return fromTextRange(editor, TextRange(
+                document.getLineStartOffset(startLine),
+                document.getLineEndOffset(endLine),
+            ))
+        }
+    }
+}
+
+@Serializable
+data class FileVisibilityState(
+    val filePath: String,
+    val visible: FileRange,
+    val caret: FilePosition,
+    val selection: FileRange,
+)
+
+//
+
+@Service
+class ActiveEditorVisibilityService : Disposable {
+    override fun dispose() {}
+
+    fun setup() {
+        val em = EditorFactory.getInstance().eventMulticaster
+
+        em.addVisibleAreaListener(object : VisibleAreaListener {
+            override fun visibleAreaChanged(event: VisibleAreaEvent) {
+                tryUpdateEditor(event.editor)
+            }
+        }, this)
+
+        em.addCaretListener(object : CaretListener {
+            override fun caretPositionChanged(event: CaretEvent) {
+                tryUpdateEditor(event.editor)
+            }
+
+            override fun caretAdded(event: CaretEvent) {
+                tryUpdateEditor(event.editor)
+            }
+
+            override fun caretRemoved(event: CaretEvent) {
+                tryUpdateEditor(event.editor)
+            }
+        }, this)
+
+        em.addSelectionListener(object : SelectionListener {
+            override fun selectionChanged(event: SelectionEvent) {
+                tryUpdateEditor(event.editor)
+            }
+        }, this)
     }
 
-    private fun filePositionFromLogicalPosition(editor: Editor, lp: LogicalPosition): FilePosition {
-        return FilePosition(
-            lp.line,
-            lp.column,
-            editor.logicalPositionToOffset(lp),
-        )
-    }
-
-    //
-
-    private fun tryLogVisibleFileAndLines(editor: Editor) {
+    private fun tryUpdateEditor(editor: Editor) {
         try {
-            logVisibleFileAndLines(editor)
+            updateEditor(editor)
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
-    private fun logVisibleFileAndLines(editor: Editor) {
+    private val lastState = AtomicReference<FileVisibilityState?>(null)
+
+    private fun updateEditor(editor: Editor) {
         val filePath = editor.virtualFile?.path ?: return
-        val visible = getVisibleLineRange(editor)
 
-        val currentCaret = editor.caretModel.currentCaret
-
-        val caret = FilePosition(
-            currentCaret.logicalPosition.line,
-            currentCaret.logicalPosition.column,
-            currentCaret.offset,
-        )
-
-        val caretSelectionRange = currentCaret.selectionRange
-        val selection = FileRange(
-            filePositionFromOffset(editor, caretSelectionRange.startOffset),
-            filePositionFromOffset(editor, caretSelectionRange.endOffset),
-        )
+        val visible = FileRange.fromRectangle(editor, editor.scrollingModel.visibleArea)
+        val caret = FilePosition.fromCaret(editor.caretModel.currentCaret)
+        val selection = FileRange.fromTextRange(editor, editor.caretModel.currentCaret.selectionRange)
 
         val newState = FileVisibilityState(
             filePath,
@@ -145,23 +167,14 @@ class ActiveEditorVisibilityTracker : ProjectActivity {
             println(js)
         }
     }
+}
 
-    private fun getVisibleLineRange(editor: Editor): FileRange {
-        val document = editor.document
-        val scrollingModel = editor.scrollingModel
-        val visibleArea = scrollingModel.visibleArea
+class ActiveEditorVisibilityTracker : ProjectActivity {
+    private val logger = Logger.getInstance("ActiveEditorLogger")
 
-        val startLine = editor.yToVisualLine(visibleArea.y)
-        val endLine = min(editor.yToVisualLine(visibleArea.y + visibleArea.height), document.lineCount - 1)
-
-        val startLogicalPosition =
-            editor.visualToLogicalPosition(editor.offsetToVisualPosition(document.getLineStartOffset(startLine)))
-        val endLogicalPosition =
-            editor.visualToLogicalPosition(editor.offsetToVisualPosition(document.getLineEndOffset(endLine)))
-
-        return FileRange(
-            filePositionFromLogicalPosition(editor, startLogicalPosition),
-            filePositionFromLogicalPosition(editor, endLogicalPosition),
-        )
+    override suspend fun execute(project: Project) {
+        ApplicationManager.getApplication().invokeLater {
+            service<ActiveEditorVisibilityService>().setup()
+        }
     }
 }
