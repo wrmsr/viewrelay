@@ -3,6 +3,7 @@
 // com.intellij.openapi.diagnostic.Logger.getInstance("ActiveEditorLogger").info("Current file: $filePath")
 package com.wrmsr.viewrelay
 
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.event.VisibleAreaListener
@@ -10,6 +11,8 @@ import com.intellij.openapi.editor.event.VisibleAreaEvent
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.editor.event.CaretEvent
+import com.intellij.openapi.editor.event.CaretListener
 import com.intellij.openapi.editor.event.SelectionEvent
 import com.intellij.openapi.editor.event.SelectionListener
 import com.intellij.openapi.startup.ProjectActivity
@@ -43,31 +46,46 @@ class ActiveEditorVisibilityTracker : ProjectActivity {
 
     override suspend fun execute(project: Project) {
         ApplicationManager.getApplication().invokeLater {
-            EditorFactory.getInstance().eventMulticaster.addVisibleAreaListener(object : VisibleAreaListener {
-                override fun visibleAreaChanged(event: VisibleAreaEvent) {
-                    try {
-                        val editor = event.editor
-                        logVisibleFileAndLines(editor)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-            }, project)
+            val em = EditorFactory.getInstance().eventMulticaster
+            val pd: Disposable = project
 
-            EditorFactory.getInstance().eventMulticaster.addSelectionListener(object : SelectionListener {
-                override fun selectionChanged(event: SelectionEvent) {
-                    try {
-                        val editor = event.editor
-                        logVisibleFileAndLines(editor)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
+            em.addVisibleAreaListener(object : VisibleAreaListener {
+                override fun visibleAreaChanged(event: VisibleAreaEvent) {
+                    tryLogVisibleFileAndLines(event.editor)
                 }
-            }, project)
+            }, pd)
+
+            em.addCaretListener(object : CaretListener {
+                override fun caretPositionChanged(event: CaretEvent) {
+                    tryLogVisibleFileAndLines(event.editor)
+                }
+
+                override fun caretAdded(event: CaretEvent) {
+                    tryLogVisibleFileAndLines(event.editor)
+                }
+
+                override fun caretRemoved(event: CaretEvent) {
+                    tryLogVisibleFileAndLines(event.editor)
+                }
+            }, pd)
+
+            em.addSelectionListener(object : SelectionListener {
+                override fun selectionChanged(event: SelectionEvent) {
+                    tryLogVisibleFileAndLines(event.editor)
+                }
+            }, pd)
         }
     }
 
     //
+
+    private fun tryLogVisibleFileAndLines(editor: Editor) {
+        try {
+            logVisibleFileAndLines(editor)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     private fun logVisibleFileAndLines(editor: Editor) {
         val filePath = editor.virtualFile?.path ?: return
