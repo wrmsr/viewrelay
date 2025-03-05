@@ -8,7 +8,7 @@
     <name>ViewRelay</name>
 
     <!-- A displayed Vendor name or Organization ID displayed on the Plugins Page. -->
-    <vendor email="timwilloney@gmail.com" url="https://www.yourcompany.com">wrmsr</vendor>
+    <vendor email="timwilloney@gmail.com" url="https://www.wrmsr.com">wrmsr</vendor>
 
     <!-- Description of the plugin displayed on the Plugin Page and IDE Plugin Manager.
          Simple HTML elements (text formatting, paragraphs, and lists) can be added inside of <![CDATA[ ]]> tag.
@@ -22,7 +22,7 @@
     <!-- Extension points defined by the plugin.
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
     <extensions defaultExtensionNs="com.intellij">
-        <postStartupActivity implementation="com.wrmsr.viewrelay.ActiveEditorVisibilityTracker"/>
+        <postStartupActivity implementation="com.wrmsr.viewrelay.ViewRelayProjectActivity"/>
     </extensions>
 
     <applicationListeners>

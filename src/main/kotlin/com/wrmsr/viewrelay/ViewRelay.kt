@@ -1,6 +1,16 @@
-// https://plugins.jetbrains.com/plugin/17669-flora-beta-
-// https://github.com/dkandalov/live-plugin
-// com.intellij.openapi.diagnostic.Logger.getInstance("ActiveEditorLogger").info("Current file: $filePath")
+/*
+TODO:
+ - multiple carets
+ - honor columns in visible
+ - server
+
+==
+
+https://plugins.jetbrains.com/plugin/17669-flora-beta-
+https://github.com/dkandalov/live-plugin
+
+com.intellij.openapi.diagnostic.Logger.getInstance("ActiveEditorLogger").info("Current file: $filePath")
+*/
 package com.wrmsr.viewrelay
 
 import com.intellij.openapi.Disposable
@@ -9,7 +19,6 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.event.VisibleAreaListener
 import com.intellij.openapi.editor.event.VisibleAreaEvent
-import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
@@ -83,10 +92,12 @@ data class FileRange(
             val startLine = editor.yToVisualLine(rectangle.y)
             val endLine = min(editor.yToVisualLine(rectangle.y + rectangle.height), document.lineCount - 1)
 
-            return fromTextRange(editor, TextRange(
-                document.getLineStartOffset(startLine),
-                document.getLineEndOffset(endLine),
-            ))
+            return fromTextRange(
+                editor, TextRange(
+                    document.getLineStartOffset(startLine),
+                    document.getLineEndOffset(endLine),
+                )
+            )
         }
     }
 }
@@ -102,10 +113,24 @@ data class FileVisibilityState(
 //
 
 @Service
-class ActiveEditorVisibilityService : Disposable {
+class ViewRelayService : Disposable {
     override fun dispose() {}
 
+    private var hasSetup = false
+
+    @Synchronized
     fun setup() {
+        if (hasSetup) {
+            return
+        }
+        hasSetup = true
+
+        installEditorListeners()
+    }
+
+    //
+
+    private fun installEditorListeners() {
         val em = EditorFactory.getInstance().eventMulticaster
 
         em.addVisibleAreaListener(object : VisibleAreaListener {
@@ -133,19 +158,22 @@ class ActiveEditorVisibilityService : Disposable {
                 tryUpdateEditor(event.editor)
             }
         }, this)
+
     }
 
     private fun tryUpdateEditor(editor: Editor) {
         try {
-            updateEditor(editor)
+            updateState(editor)
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
+    //
+
     private val lastState = AtomicReference<FileVisibilityState?>(null)
 
-    private fun updateEditor(editor: Editor) {
+    private fun updateState(editor: Editor) {
         val filePath = editor.virtualFile?.path ?: return
 
         val visible = FileRange.fromRectangle(editor, editor.scrollingModel.visibleArea)
@@ -169,12 +197,12 @@ class ActiveEditorVisibilityService : Disposable {
     }
 }
 
-class ActiveEditorVisibilityTracker : ProjectActivity {
-    private val logger = Logger.getInstance("ActiveEditorLogger")
+//
 
+class ViewRelayProjectActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
         ApplicationManager.getApplication().invokeLater {
-            service<ActiveEditorVisibilityService>().setup()
+            service<ViewRelayService>().setup()
         }
     }
 }
