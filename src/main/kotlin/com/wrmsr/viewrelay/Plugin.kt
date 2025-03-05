@@ -49,6 +49,8 @@ class ViewRelayService : Disposable {
         thread.start()
 
         listeners.install()
+
+        ChatServer(8081).start()
     }
 
     @Synchronized

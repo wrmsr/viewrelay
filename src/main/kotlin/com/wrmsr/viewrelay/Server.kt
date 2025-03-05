@@ -1,3 +1,7 @@
+/*
+nc localhost 8081
+socat - UNIX-CONNECT:/tmp/chat.sock
+*/
 package com.wrmsr.viewrelay
 
 import java.io.File
