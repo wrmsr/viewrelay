@@ -34,7 +34,7 @@ class ViewRelayServer(
     fun start() {
         servers.forEach { server -> server.start() }
 
-        println("ViewRelay server started.")
+        logger?.info("ViewRelay server started.")
     }
 
     //
@@ -68,7 +68,7 @@ class ViewRelayServer(
             clients.clear()
         }
 
-        println("ViewRelay server stopped.")
+        logger?.info("ViewRelay server stopped.")
     }
 
     //
@@ -94,7 +94,7 @@ class ViewRelayServer(
             try {
                 _socket?.close()
             } catch (e: IOException) {
-                println("Error closing socket: ${e.message}")
+                logger?.exception(e, "Error closing socket")
             }
         }
     }
