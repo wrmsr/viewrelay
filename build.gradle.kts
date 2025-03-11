@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
   id("java")
   id("org.jetbrains.kotlin.jvm") version "1.9.25"
@@ -14,15 +16,21 @@ repositories {
 
 dependencies {
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
+
+  // id("com.intellij.modules.java") version "243.25659.59"
+  // id("com.intellij.modules.python") version "243.25659.59"
 }
 
 // Configure Gradle IntelliJ Plugin
 // Read more: https://plugins.jetbrains.com/docs/intellij/tools-gradle-intellij-plugin.html
 intellij {
   version.set("2023.2.6")
-  type.set("IC") // Target IDE Platform
+  type.set("IU") // Target IDE Platform
 
-  plugins.set(listOf(/* Plugin Dependencies */))
+  plugins.set(listOf(
+    "com.intellij.java",
+    "com.intellij.modules.python",
+  ))
 }
 
 tasks {
@@ -31,8 +39,11 @@ tasks {
     sourceCompatibility = "17"
     targetCompatibility = "17"
   }
-  withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
-    kotlinOptions.jvmTarget = "17"
+
+  withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile>().configureEach {
+    compilerOptions {
+      jvmTarget.set(JvmTarget.JVM_17)
+    }
   }
 
   patchPluginXml {
